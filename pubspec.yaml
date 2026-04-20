@@ -1,0 +1,17 @@
+name: farm_ai_mobile
+description: Soil pH Analysis App
+version: 1.0.0+1
+environment:
+  sdk: '>=3.0.0 <4.0.0'
+dependencies:
+  flutter:
+    sdk: flutter
+  camera: ^0.10.5
+  http: ^1.1.0
+  image: ^4.1.3
+  path_provider: ^2.1.1
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+flutter:
+  uses-material-design: true
