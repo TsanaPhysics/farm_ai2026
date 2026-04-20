@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>xAI Soil Monitor 2026</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        body { background-color: #0b0e14; color: #e0e0e0; font-family: 'Inter', sans-serif; }
+        .glass { background: rgba(255, 255, 255, 0.05); backdrop-filter: blur(10px); border: 1px solid rgba(255, 255, 255, 0.1); }
+        #video { width: 100%; border-radius: 20px; transform: scaleX(-1); }
+        .btn-capture { background: linear-gradient(135deg, #00f2fe 0%, #4facfe 100%); }
+    </style>
+</head>
+<body class="flex flex-col min-h-screen">
+
+    <!-- Header -->
+    <header class="p-6 flex justify-between items-center">
+        <h1 class="text-xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-blue-500">
+            <i class="fas fa-microscope mr-2"></i>xAI Monitor
+        </h1>
+        <div class="text-xs bg-green-500/20 text-green-400 px-3 py-1 rounded-full border border-green-500/30">
+            <span class="animate-pulse">●</span> FIELD READY
+        </div>
+    </header>
+
+    <!-- Camera View -->
+    <main class="flex-1 px-6 space-y-6">
+        <div id="cameraContainer" class="relative glass rounded-3xl overflow-hidden aspect-square flex items-center justify-center">
+            <video id="video" autoplay playsinline class="w-full h-full object-cover"></video>
+            <canvas id="canvas" class="hidden"></canvas>
+            
+            <!-- Movable ROI Overlay -->
+            <div id="roiBox" class="absolute w-32 h-32 border-4 border-cyan-400 rounded-2xl flex items-center justify-center pointer-events-none transition-all duration-300 shadow-[0_0_20px_rgba(0,242,254,0.5)]">
+                <div class="w-1 h-8 bg-cyan-400 absolute"></div>
+                <div class="w-8 h-1 bg-cyan-400 absolute"></div>
+                <div class="absolute -top-6 text-[10px] font-bold text-cyan-400 tracking-widest bg-black/50 px-2 rounded">SCAN TARGET</div>
+            </div>
+
+            <!-- Dim Overlay -->
+            <div class="absolute inset-0 bg-black/20 pointer-events-none"></div>
+        </div>
+        <p class="text-center text-xs text-gray-500"><i class="fas fa-hand-pointer mr-1"></i> แตะบนภาพเพื่อเปลี่ยนจุดสแกน (ROI)</p>
+
+        <!-- Controls -->
+        <div class="space-y-4">
+            <button id="captureBtn" class="w-full btn-capture py-4 rounded-2xl text-black font-bold text-lg shadow-lg shadow-cyan-500/20 flex items-center justify-center gap-3">
+                <i class="fas fa-microscope"></i> วิเคราะห์พื้นที่เลือก (Scan ROI)
+            </button>
+            <div class="grid grid-cols-2 gap-4">
+                <button onclick="location.reload()" class="glass py-3 rounded-xl text-sm font-medium">
+                    <i class="fas fa-sync-alt mr-2"></i> Reset
+                </button>
+                <button class="glass py-3 rounded-xl text-sm font-medium">
+                    <i class="fas fa-history mr-2"></i> History
+                </button>
+            </div>
+        </div>
+
+        <!-- Result Card -->
+        <div id="resultCard" class="hidden glass p-6 rounded-3xl space-y-3 animate-slide-up">
+            <div class="flex justify-between items-start">
+                <div>
+                    <p class="text-xs text-gray-400 uppercase tracking-widest">ROI Analysis Result</p>
+                    <h2 id="phValue" class="text-5xl font-black text-cyan-400">6.5</h2>
+                </div>
+                <div id="phStatus" class="bg-cyan-500/10 text-cyan-400 px-4 py-2 rounded-xl text-xs font-bold border border-cyan-500/20">
+                    เหมาะสม (Neutral)
+                </div>
+            </div>
+            <div class="pt-4 border-t border-white/10">
+                <p class="text-xs text-gray-500"><i class="fas fa-info-circle mr-1"></i> xAI Confidence: <span id="confidenceText">94.2%</span></p>
+                <p id="recommendation" class="text-sm mt-2 text-gray-300">สภาพดินเหมาะสมสำหรับการปลูกทุเรียนและมังคุด ไม่ต้องปรับปรุงดิน</p>
+            </div>
+        </div>
+    </main>
+
+    <!-- Footer Navigation -->
+    <footer class="p-6">
+        <div class="glass py-4 px-8 rounded-full flex justify-between items-center text-gray-500">
+            <i class="fas fa-home text-cyan-400"></i>
+            <i class="fas fa-chart-line"></i>
+            <i class="fas fa-map-marked-alt"></i>
+            <i class="fas fa-cog"></i>
+        </div>
+    </footer>
+
+    <script>
+        const video = document.getElementById('video');
+        const canvas = document.getElementById('canvas');
+        const captureBtn = document.getElementById('captureBtn');
+        const resultCard = document.getElementById('resultCard');
+        const phValue = document.getElementById('phValue');
+        const phStatus = document.getElementById('phStatus');
+        const recommendation = document.getElementById('recommendation');
+        const roiBox = document.getElementById('roiBox');
+        const cameraContainer = document.getElementById('cameraContainer');
+        const confidenceText = document.getElementById('confidenceText');
+
+        // ROI State
+        let roiX = 50; // Percentage
+        let roiY = 50; // Percentage
+
+        // Handle ROI Selection (Tap to Move)
+        cameraContainer.addEventListener('click', (e) => {
+            const rect = cameraContainer.getBoundingClientRect();
+            roiX = ((e.clientX - rect.left) / rect.width) * 100;
+            roiY = ((e.clientY - rect.top) / rect.height) * 100;
+            
+            // Constrain ROI within box
+            roiX = Math.max(15, Math.min(85, roiX));
+            roiY = Math.max(15, Math.min(85, roiY));
+
+            roiBox.style.left = `${roiX}%`;
+            roiBox.style.top = `${roiY}%`;
+            roiBox.style.transform = `translate(-50%, -50%)`;
+        });
+
+        // Access Camera
+        async function setupCamera() {
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ 
+                    video: { facingMode: 'environment' }, 
+                    audio: false 
+                });
+                video.srcObject = stream;
+            } catch (err) {
+                alert("กรุณาอนุญาตให้เข้าถึงกล้องเพื่อใช้งานแอป");
+            }
+        }
+
+        setupCamera();
+
+        // Capture & Process with ROI
+        captureBtn.addEventListener('click', async () => {
+            const context = canvas.getContext('2d');
+            
+            // Set capture resolution to match video
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
+            
+            // Draw full frame
+            context.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+            // Calculate actual ROI coordinates on the video stream
+            const actualRoiW = canvas.width * 0.3; // 30% of width
+            const actualRoiH = canvas.height * 0.3;
+            const actualRoiX = (canvas.width * (roiX / 100)) - (actualRoiW / 2);
+            const actualRoiY = (canvas.height * (roiY / 100)) - (actualRoiH / 2);
+
+            // Create a secondary canvas for the cropped ROI
+            const roiCanvas = document.createElement('canvas');
+            roiCanvas.width = 300; // Standardize ROI size for AI
+            roiCanvas.height = 300;
+            const roiCtx = roiCanvas.getContext('2d');
+            
+            // Crop and Draw to ROI Canvas
+            roiCtx.drawImage(canvas, actualRoiX, actualRoiY, actualRoiW, actualRoiH, 0, 0, 300, 300);
+
+            // Change UI to Loading
+            captureBtn.disabled = true;
+            captureBtn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i> AI กำลังวิเคราะห์พื้นที่เลือก...';
+            
+            // Convert ROI Canvas to Blob
+            roiCanvas.toBlob(async (blob) => {
+                const formData = new FormData();
+                formData.append('image', blob, 'roi_capture.jpg');
+
+                try {
+                    const response = await fetch('../api/analyze_soil.php', {
+                        method: 'POST',
+                        body: formData
+                    });
+                    
+                    const result = await response.json();
+
+                    if (result.status === 'success') {
+                        phValue.innerText = result.ph;
+                        phValue.style.color = result.ph < 6.0 ? '#ff4d4d' : (result.ph > 7.5 ? '#f093fb' : '#00f2fe');
+                        confidenceText.innerText = result.confidence + "%";
+                        resultCard.classList.remove('hidden');
+                        
+                        phStatus.innerText = result.soil_type + " | " + (result.ph < 6.0 ? "กรด" : (result.ph > 7.5 ? "ด่าง" : "เป็นกลาง"));
+                        recommendation.innerText = result.recommendation === "Optimal" ? "สภาพดินเหมาะสมมาก ไม่ต้องปรับปรุง" : (result.ph < 6.0 ? "แนะนำให้ใส่ปูนขาวเพื่อปรับค่า pH" : "แนะนำให้ใส่กำมะถันเพื่อลดค่า pH");
+                    } else {
+                        alert("Error: " + result.message);
+                    }
+                } catch (error) {
+                    alert("ไม่สามารถเชื่อมต่อกับ AI Server ได้");
+                } finally {
+                    captureBtn.disabled = false;
+                    captureBtn.innerHTML = '<i class="fas fa-microscope mr-2"></i> วิเคราะห์พื้นที่เลือก (Scan ROI)';
+                }
+            }, 'image/jpeg', 0.8);
+        });
+    </script>
+
+
+    </script>
+</body>
+</html>
